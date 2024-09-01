@@ -498,6 +498,8 @@ class KVMHypervisor(hv_base.BaseHypervisor):
   _CTRL_DIR = _ROOT_DIR + "/ctrl" # contains instances control sockets
   _CONF_DIR = _ROOT_DIR + "/conf" # contains instances startup data
   _NICS_DIR = _ROOT_DIR + "/nic" # contains instances nic <-> tap associations
+  _TPMS_DIR = _ROOT_DIR + "/tpms" # contains instances TPM sockets
+  _UEFI_VARS_DIR = _ROOT_DIR + "/uefi-vars" # contains UEFI vars
   # KVM instances with chroot enabled are started in empty chroot directories.
   _CHROOT_DIR = _ROOT_DIR + "/chroot" # for empty chroot directories
   # After an instance is stopped, its chroot directory is removed.
@@ -507,7 +509,7 @@ class KVMHypervisor(hv_base.BaseHypervisor):
   # a separate directory, called 'chroot-quarantine'.
   _CHROOT_QUARANTINE_DIR = _ROOT_DIR + "/chroot-quarantine"
   _DIRS = [_ROOT_DIR, _PIDS_DIR, _UIDS_DIR, _CTRL_DIR, _CONF_DIR, _NICS_DIR,
-           _CHROOT_DIR, _CHROOT_QUARANTINE_DIR]
+           _CHROOT_DIR, _CHROOT_QUARANTINE_DIR, _TPMS_DIR, _UEFI_VARS_DIR]
 
   PARAMETERS = {
     constants.HV_KVM_PATH: hv_base.REQ_FILE_CHECK,
@@ -874,6 +876,29 @@ class KVMHypervisor(hv_base.BaseHypervisor):
     return utils.PathJoin(cls._InstanceNICDir(instance_name), str(seq))
 
   @classmethod
+  def _InstanceTPMSocketFile(cls, instance_name):
+    """Returns the name of the socket file for communicating with swtpm for a given
+    instance.
+
+    """
+    return utils.PathJoin(cls._TPMS_DIR, instance_name + ".sock")
+
+  @classmethod
+  def _InstanceTPMPidFile(cls, instance_name):
+    """Returns the name of the pid file containing PID of swtpm for a given
+    instance.
+
+    """
+    return utils.PathJoin(cls._TPMS_DIR, instance_name + "-swtpm.pid")
+
+  @classmethod
+  def _InstanceUEFIVarsFile(cls, instance_name):
+    """Returns the name of the file containing UEFI vars for a given instance.
+
+    """
+    return utils.PathJoin(cls._UEFI_VARS_DIR, instance_name)
+
+  @classmethod
   def _TryReadUidFile(cls, uid_file):
     """Try to read a uid file
 
@@ -899,6 +924,8 @@ class KVMHypervisor(hv_base.BaseHypervisor):
     utils.RemoveFile(cls._InstanceQmpMonitor(instance_name))
     utils.RemoveFile(cls._InstanceQemuGuestAgentMonitor(instance_name))
     utils.RemoveFile(cls._InstanceKVMRuntime(instance_name))
+    utils.RemoveFile(cls._InstanceTPMSocketFile(instance_name))
+    utils.RemoveFile(cls._InstanceUEFIVarsFile(instance_name))
     uid_file = cls._InstanceUidFile(instance_name)
     uid = cls._TryReadUidFile(uid_file)
     utils.RemoveFile(uid_file)
@@ -1726,6 +1753,26 @@ class KVMHypervisor(hv_base.BaseHypervisor):
       _generate_kvm_device(constants.HOTPLUG_TARGET_NIC, nic)
       kvm_nics.append(nic)
 
+    # UEFI
+    if instance.name == "win11":
+      uefi_code_path ="/nix/store/yn2n7nksinv99wj5scrgyq0apj4ylxxc-OVMF-202402-fd/FV/OVMF_CODE.ms.fd"
+      uefi_vars_path = self._InstanceUEFIVarsFile(instance.name)
+      kvm_cmd.extend([
+        "-drive", "if=pflash,format=raw,unit=0,file=%s,readonly=on" % uefi_code_path,
+        "-drive", "if=pflash,format=raw,unit=1,file=%s" % uefi_vars_path,
+        "-global", "driver=cfi.pflash01,property=secure,value=off",
+        "-machine", "smm=off"
+      ])
+
+    # TPM
+    if instance.name == "win11":
+      tpm_socket = self._InstanceTPMSocketFile(instance.name)
+      kvm_cmd.extend([
+        "-chardev", "socket,id=chrtpm,path=%s" % tpm_socket,
+        "-tpmdev", "emulator,id=tpm0,chardev=chrtpm",
+        "-device", "tpm-tis,tpmdev=tpm0"
+      ])
+
     hvparams = hvp
 
     return (kvm_cmd, kvm_nics, hvparams, kvm_disks)
@@ -1882,6 +1929,13 @@ class KVMHypervisor(hv_base.BaseHypervisor):
 
     return features, tap_extra_str, nic_extra_str
 
+  def _StopSwtpm(self, instance_name, timeout=0):
+    pidfile = self._InstanceTPMPidFile(instance_name)
+    pid = utils.ReadPidFile(pidfile)
+    if pid > 0:
+      utils.KillProcess(pid, timeout=timeout)
+    utils.RemoveFile(pidfile)
+
   # too many local variables
   # pylint: disable=R0914
   @_with_qmp
@@ -1980,6 +2034,42 @@ class KVMHypervisor(hv_base.BaseHypervisor):
                                                          nic.mac, nic_model)
           tap_val = "tap,vlan=%s,%s" % (nic_seq, tapfd)
           kvm_cmd.extend(["-net", tap_val, "-net", nic_val])
+
+    if name == "win11":
+      self._StopSwtpm(name)
+
+      disk, link_name, uri = kvm_disks[1]
+      socket_path = self._InstanceTPMSocketFile(name)
+      pidfile = self._InstanceTPMPidFile(name)
+      migration_option = "release-lock-outgoing"
+      if incoming:
+        migration_option += ",incoming"
+      logging.debug("Starting swtpm")
+      pid = utils.StartDaemon(cmd=[
+          "/nix/store/3n665zxcwza1fbq74l5x305wlbcjfwmf-swtpm-0.9.0/bin/swtpm",
+          "socket",
+          "--tpm2",
+          "--tpmstate", "backend-uri=file://%s" % link_name,
+          "--ctrl", "type=unixio,path=%s,mode=0600" % socket_path,
+          "--terminate",
+          "--migration", migration_option
+        ], pidfile=pidfile)
+
+      # Wait until socket pops up
+      socket_found = False
+      for i in range(5):
+        logging.info("Verifying TPM socket is present (retry %s): %s", i, socket_found)
+        socket_found = os.path.exists(socket_path)
+        if socket_found:
+          break
+        time.sleep(1)
+
+      if not socket_found:
+        raise errors.HypervisorError("Failed to set up TPM socket %s" % socket_path)
+
+      uefi_vars_data = utils.ReadBinaryFile("/nix/store/yn2n7nksinv99wj5scrgyq0apj4ylxxc-OVMF-202402-fd/FV/OVMF_VARS.ms.fd")
+      uefi_vars = self._InstanceUEFIVarsFile(name)
+      utils.WriteFile(uefi_vars, data=uefi_vars_data, mode=0o600)
 
     if incoming:
       target, port = incoming
@@ -2457,8 +2547,10 @@ class KVMHypervisor(hv_base.BaseHypervisor):
     pidfile, pid, alive = self._InstancePidAlive(instance_name)
     if pid > 0 and alive:
       raise errors.HypervisorError("Cannot cleanup a live instance")
+
     self._RemoveInstanceRuntimeFiles(pidfile, instance_name)
     self._ClearUserShutdown(instance_name)
+    self._StopSwtpm(instance_name)
 
   def RebootInstance(self, instance):
     """Reboot an instance.
@@ -2604,6 +2696,7 @@ class KVMHypervisor(hv_base.BaseHypervisor):
       utils.KillProcess(pid)
       self._RemoveInstanceRuntimeFiles(pidfile, instance.name)
       self._ClearUserShutdown(instance.name)
+      self._StopSwtpm(instance.name)
     else:
       # Detect if PID is alive rather than deciding if we were to perform a live
       # migration.

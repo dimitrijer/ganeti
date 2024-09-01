@@ -1096,7 +1096,9 @@ class TestKvmRuntime(testutils.GanetiTestCase):
         (PostfixMatcher('/run/ganeti/kvm-hypervisor/conf'), 0o775),
         (PostfixMatcher('/run/ganeti/kvm-hypervisor/nic'), 0o775),
         (PostfixMatcher('/run/ganeti/kvm-hypervisor/chroot'), 0o775),
-        (PostfixMatcher('/run/ganeti/kvm-hypervisor/chroot-quarantine'), 0o775)
+        (PostfixMatcher('/run/ganeti/kvm-hypervisor/chroot-quarantine'), 0o775),
+        (PostfixMatcher('/run/ganeti/kvm-hypervisor/tpms'), 0o775),
+        (PostfixMatcher('/run/ganeti/kvm-hypervisor/uefi-vars'), 0o775),
         ])
 
   def testStartInstance(self):
