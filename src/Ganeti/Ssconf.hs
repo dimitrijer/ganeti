@@ -109,6 +109,7 @@ hvparamsSSKey Types.Chroot = SSHvparamsChroot
 hvparamsSSKey Types.XenHvm = SSHvparamsXenHvm
 hvparamsSSKey Types.Lxc = SSHvparamsLxc
 hvparamsSSKey Types.Fake = SSHvparamsFake
+hvparamsSSKey Types.Libvirt = SSHvparamsLibvirt
 
 -- | Convert a ssconf key into a (full) file path.
 keyToFilename :: FilePath     -- ^ Config path root

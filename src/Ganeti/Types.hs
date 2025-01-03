@@ -474,13 +474,13 @@ $(THH.makeJSONInstance ''DdmFull)
 
 -- | Hypervisor type definitions.
 $(THH.declareLADT ''String "Hypervisor"
-  [ ("Kvm",    "kvm")
-  , ("XenPvm", "xen-pvm")
-  , ("Chroot", "chroot")
-  , ("XenHvm", "xen-hvm")
-  , ("Lxc",    "lxc")
-  , ("Fake",   "fake")
-  , ("Libvirt",   "libvirt")
+  [ ("Kvm",     "kvm")
+  , ("XenPvm",  "xen-pvm")
+  , ("Chroot",  "chroot")
+  , ("XenHvm",  "xen-hvm")
+  , ("Lxc",     "lxc")
+  , ("Fake",    "fake")
+  , ("Libvirt", "libvirt")
   ])
 $(THH.makeJSONInstance ''Hypervisor)
 
