@@ -557,6 +557,8 @@ lxcDropCapabilitiesDefault =
 lxcStateRunning :: String
 lxcStateRunning = "RUNNING"
 
+-- * Libvirt
+
 -- * Console types
 
 -- | Display a message for console access
@@ -2648,6 +2650,9 @@ htChroot = Types.hypervisorToRaw Chroot
 htLxc :: String
 htLxc = Types.hypervisorToRaw Lxc
 
+htLibvirt :: String
+htLibvirt = Types.hypervisorToRaw Libvirt
+
 hyperTypes :: FrozenSet String
 hyperTypes = ConstantUtils.mkSet $ map Types.hypervisorToRaw [minBound..]
 
@@ -3976,6 +3981,9 @@ ssHvparamsXenLxc = ssHvparamsPref ++ htLxc
 ssHvparamsXenPvm :: String
 ssHvparamsXenPvm = ssHvparamsPref ++ htXenPvm
 
+ssHvparamsXenLibvirt :: String
+ssHvparamsXenLibvirt = ssHvparamsPref ++ htLibvirt
+
 validSsHvparamsKeys :: FrozenSet String
 validSsHvparamsKeys =
   ConstantUtils.mkSet [ssHvparamsXenChroot,
@@ -3983,7 +3991,8 @@ validSsHvparamsKeys =
                        ssHvparamsXenFake,
                        ssHvparamsXenHvm,
                        ssHvparamsXenKvm,
-                       ssHvparamsXenPvm]
+                       ssHvparamsXenPvm,
+                       ssHvparamsXenLibvirt]
 
 ssFilePerms :: Int
 ssFilePerms = 0o444

@@ -940,6 +940,7 @@ AC_PYTHON_MODULE(pycurl, t)
 AC_PYTHON_MODULE(bitarray, t)
 AC_PYTHON_MODULE(psutil)
 AC_PYTHON_MODULE(paramiko)
+AC_PYTHON_MODULE(libvirt, t)
 
 # Development-only Python modules
 PY_NODEV=
