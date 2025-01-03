@@ -4167,7 +4167,7 @@ hvcDefaults =
           , (hvLxcNumTtys,          PyValueEx (6 :: Int))
           , (hvLxcStartupTimeout,   PyValueEx (30 :: Int))
           ])
-  , (Libvirt, Map.fromList [])
+  , (Libvirt, Map.fromList [(hvMigrationMode, PyValueEx htMigrationLive)]
   ]
 
 hvcGlobals :: FrozenSet String
